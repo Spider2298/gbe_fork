@@ -39,12 +39,6 @@ enum connect_socket_status {
 };
 
 struct Connect_Socket {
-    struct compare_snm_for_queue {
-        bool operator()(const Networking_Sockets &left, const Networking_Sockets &right) {
-            return left.message_number() > right.message_number();
-        }
-    };
-
     int virtual_port{};
     int real_port{};
 
@@ -56,10 +50,14 @@ struct Connect_Socket {
     enum connect_socket_status status{};
     int64 user_data{};
 
-    std::priority_queue<Networking_Sockets, std::vector<Networking_Sockets>, compare_snm_for_queue> data{};
+    // Preserve receive order exactly as messages arrive from the transport.
+    std::deque<Networking_Sockets> data{};
     HSteamNetPollGroup poll_group{};
 
     unsigned long long packet_send_counter{};
+    std::vector<int> lane_priorities{0};
+    std::vector<uint16> lane_weights{1};
+    std::vector<uint64> lane_packet_send_counters{1};
     CSteamID created_by{};
 
     std::chrono::steady_clock::time_point connect_request_last_sent{};
@@ -107,6 +105,7 @@ public ISteamNetworkingSockets
 
     HSteamNetConnection new_connect_socket(SteamNetworkingIdentity remote_identity, int virtual_port, int real_port, enum connect_socket_status status=CONNECT_SOCKET_CONNECTING, HSteamListenSocket listen_socket_id=k_HSteamListenSocket_Invalid, HSteamNetConnection remote_id=k_HSteamNetConnection_Invalid);
     struct Listen_Socket *get_connection_socket(HSteamListenSocket id);
+    EResult send_message_to_connection(std::map<HSteamNetConnection, Connect_Socket>::iterator connect_socket, const void *pData, uint32 cbData, int nSendFlags, uint16 lane_idx, int64 *pOutMessageNumber);
 
     bool send_packet_new_connection(HSteamNetConnection m_hConn);
 

@@ -362,10 +362,6 @@ void Steam_Networking_Messages::RunCallbacks()
 
         auto conn = connections.find(source_id);
         if (conn != connections.end()) {
-            if (conn->second.remote_id == 0) {
-                conn->second.remote_id = msg->networking_messages().id_from();
-            }
-
             if (conn->second.remote_id == msg->networking_messages().id_from())
                 conn->second.data[msg->networking_messages().channel()].push(msg->networking_messages().data());
         }
@@ -417,18 +413,6 @@ void Steam_Networking_Messages::Callback(Common_Message *msg)
         }
 
         if (msg->networking_messages().type() == Networking_Messages::DATA) {
-            auto conn = connections.find((uint64)msg->source_id());
-            if (conn == connections.end()) {
-                SteamNetworkingIdentity identity;
-                identity.SetSteamID64(msg->source_id());
-                conn = find_or_create_message_connection(identity, true, false);
-            }
-
-            if (conn != connections.end() && conn->second.remote_id == 0) {
-                conn->second.remote_id = msg->networking_messages().id_from();
-                conn->second.dead = false;
-            }
-
             incoming_data.push_back(Common_Message(*msg));
         }
     }
