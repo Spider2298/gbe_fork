@@ -1206,6 +1206,14 @@ bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
     size_t size = msg->ByteSizeLong();
     if (size >= MAX_UDP_SIZE) reliable = true; //too big for UDP
 
+    // Steam ISteamNetworkingSockets / ISteamNetworkingMessages traffic must use ordered
+    // delivery when TCP is available. Games often mark large session frames "unreliable"
+    // but still expect message boundaries preserved (MTU-safe path). Also force the
+    // reliable/TCP branch so we do not silently drop sends before TCP is up (see below).
+    if (msg->has_networking_sockets() || msg->has_networking_messages()) {
+        reliable = true;
+    }
+
     bool ret = false;
     CSteamID dest_id((uint64)msg->dest_id());
     if (std::find(ids.begin(), ids.end(), dest_id) != ids.end()) {
@@ -1228,6 +1236,13 @@ bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
                 ret = true;
             } else if (conn->tcp_socket_outgoing.received_data) {
                 send_buffer_tcp(conn->tcp_socket_outgoing, msg);
+                ret = true;
+            } else {
+                // Previously dropped the packet: games then see truncated or missing payloads
+                // while the TCP handshake is still completing. Fall back to UDP.
+                std::vector<char> buffer(size, 0);
+                msg->SerializeToArray(&buffer[0], static_cast<int>(size));
+                send_packet_to(udp_socket, conn->udp_ip_port, &buffer[0], static_cast<unsigned long>(size));
                 ret = true;
             }
         } else {
