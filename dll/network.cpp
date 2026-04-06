@@ -28,7 +28,11 @@ static uint32_t upper_range_ips[MAX_BROADCASTS];
 #define HEARTBEAT_TIMEOUT 20.0
 #define USER_TIMEOUT 20.0
 
+// Serialized Common_Message larger than this is not sent as a single UDP datagram when an
+// unreliable send would otherwise use UDP; TCP is used if connected. Avoids MTU fragmentation
+// / loss that breaks games sending multi-KiB frames (e.g. Enshrouded session ~3328 bytes).
 #define MAX_UDP_SIZE 16384
+#define MAX_UDP_SINGLE_DATAGRAM 1200
 
 #if defined(STEAM_WIN32)
 
@@ -1227,9 +1231,21 @@ bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
                 ret = true;
             }
         } else {
-            std::vector<char> buffer(size, 0);
-            msg->SerializeToArray(&buffer[0], static_cast<int>(size));
-            send_packet_to(udp_socket, conn->udp_ip_port, &buffer[0], static_cast<unsigned long>(size));
+            bool used_tcp = false;
+            if (size > MAX_UDP_SINGLE_DATAGRAM) {
+                if (conn->tcp_socket_incoming.received_data) {
+                    send_buffer_tcp(conn->tcp_socket_incoming, msg);
+                    used_tcp = true;
+                } else if (conn->tcp_socket_outgoing.received_data) {
+                    send_buffer_tcp(conn->tcp_socket_outgoing, msg);
+                    used_tcp = true;
+                }
+            }
+            if (!used_tcp) {
+                std::vector<char> buffer(size, 0);
+                msg->SerializeToArray(&buffer[0], static_cast<int>(size));
+                send_packet_to(udp_socket, conn->udp_ip_port, &buffer[0], static_cast<unsigned long>(size));
+            }
             ret = true;
         }
     }
